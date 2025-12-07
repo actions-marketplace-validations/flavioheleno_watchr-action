@@ -4,7 +4,12 @@ set -o errexit
 set -o noglob
 set -o nounset
 
-if test "${INPUT_CHECK}" == "certificate"; then
+if test "${INPUT_CHECK}" = "certificate"; then
+###############################################
+# Certificate Check
+###############################################
+
+  # input handling
   PARAM_EXPIRATION_THRESHOLD="--expiration-threshold=5"
   if ! test -z "${INPUT_EXPIRATION_THRESHOLD:-}"; then
     PARAM_EXPIRATION_THRESHOLD="--expiration-threshold=${INPUT_EXPIRATION_THRESHOLD}"
@@ -25,9 +30,11 @@ if test "${INPUT_CHECK}" == "certificate"; then
     PARAM_ISSUER_NAME="--issuer-name=${INPUT_ISSUER_NAME}"
   fi
 
+  # check execution
   # shellcheck disable=SC2086,SC2090
   watchr \
     check:certificate \
+    --no-ansi \
     -vvv \
     $PARAM_EXPIRATION_THRESHOLD \
     $PARAM_FINGERPRINT \
@@ -39,14 +46,12 @@ if test "${INPUT_CHECK}" == "certificate"; then
 
   STDOUT=$(cat certificate.log)
 
-  # shellcheck disable=SC2086
-  echo "status=${EXIT_CODE}" >> $GITHUB_OUTPUT
-  # shellcheck disable=SC2086
-  echo "stdout=${STDOUT}" >> $GITHUB_OUTPUT
-  # shellcheck disable=SC2086
-  echo "${STDOUT}" >> $GITHUB_STEP_SUMMARY
-  echo "${STDOUT}"
-elif test "${INPUT_CHECK}" == "domain"; then
+elif test "${INPUT_CHECK}" = "domain"; then
+############################################
+# Domain Name Check
+############################################
+
+  # input handling
   PARAM_EXPIRATION_THRESHOLD="--expiration-threshold=5"
   if ! test -z "${INPUT_EXPIRATION_THRESHOLD:-}"; then
     PARAM_EXPIRATION_THRESHOLD="--expiration-threshold=${INPUT_EXPIRATION_THRESHOLD}"
@@ -65,10 +70,12 @@ elif test "${INPUT_CHECK}" == "domain"; then
     done;
   fi
 
+  # check execution
   IFS=' '
   # shellcheck disable=SC2086,SC2090
   watchr \
     check:domain \
+    --no-ansi \
     -vvv \
     $PARAM_EXPIRATION_THRESHOLD \
     $PARAM_REGISTRAR_NAME \
@@ -79,15 +86,52 @@ elif test "${INPUT_CHECK}" == "domain"; then
 
   STDOUT=$(cat domain.log)
 
-  # shellcheck disable=SC2086
-  echo "status=${EXIT_CODE}" >> $GITHUB_OUTPUT
-  # shellcheck disable=SC2086
-  echo "stdout=${STDOUT}" >> $GITHUB_OUTPUT
-  # shellcheck disable=SC2086
-  echo "${STDOUT}" >> $GITHUB_STEP_SUMMARY
-  echo "${STDOUT}"
+elif test "${INPUT_CHECK}" = "http-resp"; then
+###############################################
+# HTTP Response Check
+###############################################
+
+  # input handling
+  PARAM_METHOD=""
+  if ! test -z "${INPUT_HTTP_METHOD:-}"; then
+    PARAM_METHOD="--method=${INPUT_HTTP_METHOD}"
+  fi
+
+  PARAM_STATUS_CODES=""
+  if ! test -z "${INPUT_HTTP_STATUS_CODES:-}"; then
+    IFS=','
+    for CODE in ${INPUT_HTTP_STATUS_CODES}; do
+      PARAM_STATUS_CODES="${PARAM_STATUS_CODES} --status-code=${CODE}"
+    done;
+  fi
+
+  # check execution
+  IFS=' '
+  # shellcheck disable=SC2086,SC2090
+  watchr \
+    check:http-resp \
+    --no-ansi \
+    -vvv \
+    $PARAM_METHOD \
+    $PARAM_STATUS_CODES \
+    -- \
+    "${INPUT_HTTP_TARGET_URL}" > http.log 2>&1 \
+    && EXIT_CODE=$? || EXIT_CODE=$?
+
+  STDOUT=$(cat http.log)
+
 else
   echo "Invalid check value \"{$INPUT_CHECK}\""
 
   exit 1
 fi
+
+echo "status=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+{
+  echo "stdout<<EOSTDOUT"
+  echo "${STDOUT}"
+  echo "EOSTDOUT"
+} >> "$GITHUB_OUTPUT"
+echo "\`\`\`${STDOUT}\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+
+exit "${EXIT_CODE}"
